@@ -223,7 +223,7 @@ with tab2:
     
     latex_eq, nota = obtener_intervalos_analiticos(tipo_f, tipo_g, amp_f, amp_g, t0_f, t0_g)
     
-    st.markdown("### 📝 Expresión Analítica Ajustada por Intervalos")
+    st.markdown("### 📝 Expresión Analítica por Intervalos")
     st.latex(latex_eq)
     st.caption(f"📌 **Nota de análisis:** {nota}")
     
