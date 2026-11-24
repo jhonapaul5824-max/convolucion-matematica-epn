@@ -16,7 +16,7 @@ st.sidebar.write("**Código de Autoría:** EPN-MATH-ADV-2026-JR")
 
 st.markdown("""
 > **Autor del Código:** Jhonatan Ramírez  
-> *Aplicación interactiva para el cálculo de operaciones básicas y convolución continua de señales estándar.*
+> *Aplicación interactiva para el cálculo de operaciones básicas, convolución continua y análisis analítico por intervalos.*
 """)
 
 # Parámetros de funciones
@@ -25,7 +25,6 @@ t_min, t_max = st.sidebar.slider("Rango de tiempo (t)", -10.0, 10.0, (-5.0, 5.0)
 t = np.linspace(t_min, t_max, 1000)
 dt = t[1] - t[0]
 
-# Lista de señales solicitadas
 opciones_senales = [
     "Pulso Rectangular / Compuerta",
     "Pulso Triangular",
@@ -49,19 +48,61 @@ def generar_funcion(tipo, t):
     elif tipo == "Escalón Unitario u(t)":
         return np.where(t >= 0, 1.0, 0.0)
     elif tipo == "Impulso Unitario δ(t)":
-        # Aproximación numérica del impulso unitario con área = 1
         ancho = 0.05
         return np.where((t >= -ancho/2) & (t <= ancho/2), 1.0 / ancho, 0.0)
     elif tipo == "Rampa r(t)":
         return np.where(t >= 0, t, 0.0)
-    elif tipo == "Función Signun sgn(t)":
+    elif tipo == "Función Signo sgn(t)":
         return np.sign(t)
     return np.zeros_like(t)
+
+def obtener_intervalos_analiticos(f_name, g_name):
+    """Devuelve la solución analítica formal expresada a trozos por intervalos para casos estándar."""
+    if f_name == "Pulso Rectangular / Compuerta" and g_name == "Pulso Rectangular / Compuerta":
+        return r"""
+        (f * g)(t) = 
+        \begin{cases} 
+        0, & t < -2 \\ 
+        t + 2, & -2 \le t < 0 \\ 
+        2 - t, & 0 \le t \le 2 \\ 
+        0, & t > 2 
+        \end{cases}
+        """, "Resultado: Triángulo centrado en t=0 con soporte en [-2, 2]."
+
+    elif f_name == "Exponencial Decreciente" and g_name == "Escalón Unitario u(t)":
+        return r"""
+        (f * g)(t) = 
+        \begin{cases} 
+        0, & t < 0 \\ 
+        1 - e^{-t}, & t \ge 0 
+        \end{cases}
+        """, "Resultado: Crecimiento exponencial acotado para t ≥ 0."
+
+    elif f_name == "Pulso Rectangular / Compuerta" and g_name == "Exponencial Decreciente":
+        return r"""
+        (f * g)(t) = 
+        \begin{cases} 
+        0, & t < -1 \\ 
+        1 - e^{-(t+1)}, & -1 \le t < 1 \\ 
+        e^{-(t-1)} - e^{-(t+1)}, & t \ge 1 
+        \end{cases}
+        """, "Resultado: Respuesta de un filtro de primer orden ante un pulso."
+
+    elif "Impulso Unitario" in f_name or "Impulso Unitario" in g_name:
+        otra = g_name if "Impulso Unitario" in f_name else f_name
+        return rf"""
+        (f * g)(t) = {otra}(t) \quad \forall t \in \mathbb{{R}}
+        """, "Propiedad de tamizado: La convolución con un impulso δ(t) devuelve la misma función."
+
+    else:
+        return r"""
+        (f * g)(t) = \int_{-\infty}^{\infty} f(\tau) g(t - \tau) d\tau
+        """, "Representación evaluada numéricamente de forma continua sobre el rango t definido."
 
 f_t = generar_funcion(tipo_f, t)
 g_t = generar_funcion(tipo_g, t)
 
-tab1, tab2, tab3 = st.tabs(["📊 Operaciones Básicas", "🔄 Convolución (f * g)", "💻 Código Fuente del Autor"])
+tab1, tab2, tab3 = st.tabs(["📊 Operaciones Básicas", "🔄 Convolución e Intervalos", "💻 Código Fuente del Autor"])
 
 with tab1:
     st.subheader("Suma, Resta y Multiplicación de Funciones")
@@ -90,14 +131,26 @@ with tab1:
     st.pyplot(fig)
 
 with tab2:
-    st.subheader("Convolución Continua: (f * g)(t)")
+    st.subheader("Convolución Continua y Definición por Intervalos")
     st.latex(r"(f * g)(t) = \int_{-\infty}^{\infty} f(\tau) g(t - \tau) d\tau")
+    
+    # Mostrar desarrollo por intervalos analíticos
+    latex_eq, nota = obtener_intervalos_analiticos(tipo_f, tipo_g)
+    
+    st.markdown("### 📝 Expresión Analítica Resultante por Intervalos")
+    st.latex(latex_eq)
+    st.caption(f"📌 **Nota de análisis:** {nota}")
+    
+    st.markdown("---")
+    st.markdown("### 📈 Gráfica del Resultado")
     
     conv_res = np.convolve(f_t, g_t, mode='same') * dt
     
     fig_conv, ax_conv = plt.subplots(figsize=(10, 4))
     ax_conv.plot(t, conv_res, label="(f * g)(t)", color="purple", lw=2)
     ax_conv.set_title(f"Convolución entre {tipo_f} y {tipo_g}")
+    ax_conv.set_xlabel("t")
+    ax_conv.set_ylabel("(f * g)(t)")
     ax_conv.grid(True)
     ax_conv.legend(loc="upper right")
     st.pyplot(fig_conv)
