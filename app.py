@@ -16,7 +16,7 @@ st.sidebar.write("**Código de Autoría:** EPN-MATH-ADV-2026-JR")
 
 st.markdown("""
 > **Autor del Código:** Jhonatan Ramírez  
-> *Aplicación interactiva con parámetros de amplitud, desplazamiento temporal y cálculo de convolución analítica.*
+> *Aplicación interactiva con parámetros de amplitud, desplazamiento temporal y cálculo analítico por intervalos.*
 """)
 
 opciones_senales = [
@@ -77,11 +77,11 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
     A_total = A1 * A2
     s_tot = f"{shift_total:.1f}"
     
-    if f_name == "Pulso Rectangular / Compuerta" and g_name == "Pulso Rectangular / Compuerta":
+    # 1. Pulso Rectangular * Pulso Rectangular
+    if "Compuerta" in f_name and "Compuerta" in g_name:
         t_low = f"{-2 + shift_total:.1f}"
         t_mid = s_tot
         t_high = f"{2 + shift_total:.1f}"
-        
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t_low + r" \\ "
@@ -89,23 +89,64 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
             f"{A_total:.1f}" r" \cdot (" + t_high + r" - t), & " + t_mid + r" \le t \le " + t_high + r" \\ "
             r"0, & t > " + t_high + r" \end{cases}"
         )
-        return eq, f"Resultado: Triángulo de amplitud {A_total*2:.1f} centrado en t = {s_tot} sobre el intervalo [{t_low}, {t_high}]."
+        return eq, f"Triángulo centrado en t = {s_tot} en el intervalo [{t_low}, {t_high}]."
 
-    elif f_name == "Exponencial Decreciente" and g_name == "Escalón Unitario u(t)":
+    # 2. Exponencial * Escalón
+    elif ("Exponencial" in f_name and "Escalón" in g_name) or ("Escalón" in f_name and "Exponencial" in g_name):
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + s_tot + r" \\ "
             f"{A1:.1f}" r" \cdot (1 - e^{-(t - " + s_tot + r")}), & t \ge " + s_tot + r" \end{cases}"
         )
-        return eq, f"Resultado: Crecimiento exponencial acotado por A = {A1:.1f} iniciado en t = {s_tot}."
+        return eq, f"Crecimiento exponencial acotado iniciado en t = {s_tot}."
 
-    elif "Impulso Unitario" in f_name or "Impulso Unitario" in g_name:
-        eq = r"(f * g)(t) = f_{\text{desplazada}}(t - " + s_tot + r")"
-        return eq, f"Propiedad de tamizado: El impulso desplaza la salida a t = {s_tot}."
+    # 3. Pulso Rectangular * Exponencial
+    elif ("Compuerta" in f_name and "Exponencial" in g_name) or ("Exponencial" in f_name and "Compuerta" in g_name):
+        t1 = f"{-1 + shift_total:.1f}"
+        t2 = f"{1 + shift_total:.1f}"
+        eq = (
+            r"(f * g)(t) = \begin{cases} "
+            r"0, & t < " + t1 + r" \\ "
+            f"{A_total:.1f}" r" \cdot (1 - e^{-(t - " + t1 + r")}), & " + t1 + r" \le t < " + t2 + r" \\ "
+            f"{A_total:.1f}" r" \cdot e^{-(t - " + t2 + r")}(1 - e^{-2}), & t \ge " + t2 + r" \end{cases}"
+        )
+        return eq, f"Respuesta de pulso acotado entre t = {t1} y t = {t2}."
 
+    # 4. Escalón * Escalón
+    elif "Escalón" in f_name and "Escalón" in g_name:
+        eq = (
+            r"(f * g)(t) = \begin{cases} "
+            r"0, & t < " + s_tot + r" \\ "
+            r"t - " + s_tot + r", & t \ge " + s_tot + r" \end{cases}"
+        )
+        return eq, f"Rampa resultante iniciada en t = {s_tot}."
+
+    # 5. Pulso Rectangular * Escalón
+    elif ("Compuerta" in f_name and "Escalón" in g_name) or ("Escalón" in f_name and "Compuerta" in g_name):
+        t1 = f"{-1 + shift_total:.1f}"
+        t2 = f"{1 + shift_total:.1f}"
+        eq = (
+            r"(f * g)(t) = \begin{cases} "
+            r"0, & t < " + t1 + r" \\ "
+            f"{A1:.1f}" r" \cdot (t - " + t1 + r"), & " + t1 + r" \le t < " + t2 + r" \\ "
+            f"{2 * A1:.1f}, & t \ge " + t2 + r" \end{cases}"
+        )
+        return eq, f"Crecimiento lineal entre {t1} y {t2}, constante después."
+
+    # 6. Impulso Unitario
+    elif "Impulso" in f_name or "Impulso" in g_name:
+        otra = g_name if "Impulso" in f_name else f_name
+        eq = r"(f * g)(t) = \text{" + otra.split()[0] + r"}(t - " + s_tot + r")"
+        return eq, f"Propiedad de tamizado: La función se desplaza totalmente a t = {s_tot}."
+
+    # 7. Caso General (Demás combinaciones)
     else:
-        eq = r"(f * g)(t) = \int_{-\infty}^{\infty} f(\tau) g(t - \tau) d\tau"
-        return eq, f"Evaluación numérica continua con A_f = {A1:.1f}, A_g = {A2:.1f} y desplazamiento neto en t = {s_tot}."
+        eq = (
+            r"(f * g)(t) = \begin{cases} "
+            r"0, & t < " + s_tot + r" \\ "
+            r"\int_{-\infty}^{t} f(\tau) g(t - \tau) d\tau, & t \ge " + s_tot + r" \end{cases}"
+        )
+        return eq, f"Evaluación de la integral por tramos con desplazamiento neto en t = {s_tot}."
 
 
 f_t = generar_funcion(tipo_f, t, amp_f, t0_f)
