@@ -16,7 +16,7 @@ st.sidebar.write("**Código de Autoría:** EPN-MATH-ADV-2026-JR")
 
 st.markdown("""
 > **Autor del Código:** Jhonatan Ramírez  
-> *Aplicación interactiva con parámetros de amplitud, desplazamiento temporal y cálculo analítico por intervalos.*
+> *Aplicación interactiva con parámetros de amplitud, desplazamiento temporal y cálculo analítico exacto por intervalos.*
 """)
 
 opciones_senales = [
@@ -72,63 +72,99 @@ def generar_funcion(tipo, t, amp, t0):
     return np.zeros_like(t)
 
 
+def fmt_sub(val):
+    """Formatea la expresión t - val de forma matemática limpia sin dobles signos."""
+    if val < 0:
+        return f"t + {abs(val):.1f}"
+    elif val > 0:
+        return f"t - {val:.1f}"
+    else:
+        return "t"
+
+
+def fmt_amp(amp):
+    """Omite el multiplicador de amplitud si es 1.0."""
+    return "" if abs(amp - 1.0) < 1e-5 else f"{amp:.1f} \cdot "
+
+
 def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
     shift_total = shift1 + shift2
     A_total = A1 * A2
     s_tot = f"{shift_total:.1f}"
+    str_amp_tot = fmt_amp(A_total)
+    str_amp_1 = fmt_amp(A1)
     
     # 1. Pulso Rectangular * Pulso Rectangular
     if "Compuerta" in f_name and "Compuerta" in g_name:
-        t_low = f"{-2 + shift_total:.1f}"
-        t_mid = s_tot
-        t_high = f"{2 + shift_total:.1f}"
+        t_low_num = -2 + shift_total
+        t_mid_num = shift_total
+        t_high_num = 2 + shift_total
+        
+        t_low = f"{t_low_num:.1f}"
+        t_mid = f"{t_mid_num:.1f}"
+        t_high = f"{t_high_num:.1f}"
+        
+        expr_inc = fmt_sub(t_low_num)
+        
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t_low + r" \\ "
-            f"{A_total:.1f}" r" \cdot (t - " + t_low + r"), & " + t_low + r" \le t < " + t_mid + r" \\ "
-            f"{A_total:.1f}" r" \cdot (" + t_high + r" - t), & " + t_mid + r" \le t \le " + t_high + r" \\ "
+            + str_amp_tot + r"(" + expr_inc + r"), & " + t_low + r" \le t < " + t_mid + r" \\ "
+            + str_amp_tot + r"(" + t_high + r" - t), & " + t_mid + r" \le t \le " + t_high + r" \\ "
             r"0, & t > " + t_high + r" \end{cases}"
         )
-        return eq, f"Triángulo centrado en t = {s_tot} en el intervalo [{t_low}, {t_high}]."
+        return eq, f"Triángulo de amplitud {A_total*2:.1f} centrado en t = {s_tot} sobre el intervalo [{t_low}, {t_high}]."
 
     # 2. Exponencial * Escalón
     elif ("Exponencial" in f_name and "Escalón" in g_name) or ("Escalón" in f_name and "Exponencial" in g_name):
+        exp_t = fmt_sub(shift_total)
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + s_tot + r" \\ "
-            f"{A1:.1f}" r" \cdot (1 - e^{-(t - " + s_tot + r")}), & t \ge " + s_tot + r" \end{cases}"
+            + str_amp_1 + r"(1 - e^{-(" + exp_t + r")}), & t \ge " + s_tot + r" \end{cases}"
         )
         return eq, f"Crecimiento exponencial acotado iniciado en t = {s_tot}."
 
     # 3. Pulso Rectangular * Exponencial
     elif ("Compuerta" in f_name and "Exponencial" in g_name) or ("Exponencial" in f_name and "Compuerta" in g_name):
-        t1 = f"{-1 + shift_total:.1f}"
-        t2 = f"{1 + shift_total:.1f}"
+        t1_num = -1 + shift_total
+        t2_num = 1 + shift_total
+        t1 = f"{t1_num:.1f}"
+        t2 = f"{t2_num:.1f}"
+        
+        exp1 = fmt_sub(t1_num)
+        exp2 = fmt_sub(t2_num)
+        
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t1 + r" \\ "
-            f"{A_total:.1f}" r" \cdot (1 - e^{-(t - " + t1 + r")}), & " + t1 + r" \le t < " + t2 + r" \\ "
-            f"{A_total:.1f}" r" \cdot e^{-(t - " + t2 + r")}(1 - e^{-2}), & t \ge " + t2 + r" \end{cases}"
+            + str_amp_tot + r"(1 - e^{-(" + exp1 + r")}), & " + t1 + r" \le t < " + t2 + r" \\ "
+            + str_amp_tot + r"e^{-(" + exp2 + r")}(1 - e^{-2}), & t \ge " + t2 + r" \end{cases}"
         )
         return eq, f"Respuesta de pulso acotado entre t = {t1} y t = {t2}."
 
     # 4. Escalón * Escalón
     elif "Escalón" in f_name and "Escalón" in g_name:
+        rampa_expr = fmt_sub(shift_total)
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + s_tot + r" \\ "
-            r"t - " + s_tot + r", & t \ge " + s_tot + r" \end{cases}"
+            + rampa_expr + r", & t \ge " + s_tot + r" \end{cases}"
         )
         return eq, f"Rampa resultante iniciada en t = {s_tot}."
 
     # 5. Pulso Rectangular * Escalón
     elif ("Compuerta" in f_name and "Escalón" in g_name) or ("Escalón" in f_name and "Compuerta" in g_name):
-        t1 = f"{-1 + shift_total:.1f}"
-        t2 = f"{1 + shift_total:.1f}"
+        t1_num = -1 + shift_total
+        t2_num = 1 + shift_total
+        t1 = f"{t1_num:.1f}"
+        t2 = f"{t2_num:.1f}"
+        expr_lin = fmt_sub(t1_num)
+        
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t1 + r" \\ "
-            f"{A1:.1f}" r" \cdot (t - " + t1 + r"), & " + t1 + r" \le t < " + t2 + r" \\ "
+            + str_amp_1 + r"(" + expr_lin + r"), & " + t1 + r" \le t < " + t2 + r" \\ "
             f"{2 * A1:.1f}, & t \ge " + t2 + r" \end{cases}"
         )
         return eq, f"Crecimiento lineal entre {t1} y {t2}, constante después."
@@ -136,10 +172,11 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
     # 6. Impulso Unitario
     elif "Impulso" in f_name or "Impulso" in g_name:
         otra = g_name if "Impulso" in f_name else f_name
-        eq = r"(f * g)(t) = \text{" + otra.split()[0] + r"}(t - " + s_tot + r")"
+        exp_imp = fmt_sub(shift_total)
+        eq = r"(f * g)(t) = \text{" + otra.split()[0] + r"}(" + exp_imp + r")"
         return eq, f"Propiedad de tamizado: La función se desplaza totalmente a t = {s_tot}."
 
-    # 7. Caso General (Demás combinaciones)
+    # 7. Caso General
     else:
         eq = (
             r"(f * g)(t) = \begin{cases} "
