@@ -75,39 +75,37 @@ def generar_funcion(tipo, t, amp, t0):
 def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
     shift_total = shift1 + shift2
     A_total = A1 * A2
+    s_tot = f"{shift_total:.1f}"
     
     if f_name == "Pulso Rectangular / Compuerta" and g_name == "Pulso Rectangular / Compuerta":
-        t_low = -2 + shift_total
-        t_mid = shift_total
-        t_high = 2 + shift_total
-        return rf"""
-        (f * g)(t) = 
-        \begin{{cases}} 
-        0, & t < {t_low:.1f} \\ 
-        {A_total:.1f} \cdot (t - {t_low:.1f}), & {t_low:.1f} \le t < {t_mid:.1f} \\ 
-        {A_total:.1f} \cdot ({t_high:.1f} - t), & {t_mid:.1f} \le t \le {t_high:.1f} \\ 
-        0, & t > {t_high:.1f} 
-        \end{cases}
-        """, f"Resultado: Triángulo de amplitud máxima {A_total*2:.1f} centrado en t = {shift_total:.1f} sobre el intervalo [{t_low:.1f}, {t_high:.1f}]."
+        t_low = f"{-2 + shift_total:.1f}"
+        t_mid = s_tot
+        t_high = f"{2 + shift_total:.1f}"
+        
+        eq = (
+            r"(f * g)(t) = \begin{cases} "
+            r"0, & t < " + t_low + r" \\ "
+            f"{A_total:.1f}" r" \cdot (t - " + t_low + r"), & " + t_low + r" \le t < " + t_mid + r" \\ "
+            f"{A_total:.1f}" r" \cdot (" + t_high + r" - t), & " + t_mid + r" \le t \le " + t_high + r" \\ "
+            r"0, & t > " + t_high + r" \end{cases}"
+        )
+        return eq, f"Resultado: Triángulo de amplitud {A_total*2:.1f} centrado en t = {s_tot} sobre el intervalo [{t_low}, {t_high}]."
 
     elif f_name == "Exponencial Decreciente" and g_name == "Escalón Unitario u(t)":
-        return rf"""
-        (f * g)(t) = 
-        \begin{{cases}} 
-        0, & t < {shift_total:.1f} \\ 
-        {A1:.1f} \cdot (1 - e^{-(t - {shift_total:.1f})}), & t \ge {shift_total:.1f} 
-        \end{{cases}}
-        """, f"Resultado: Crecimiento exponencial acotado por la amplitud A = {A1:.1f} iniciado en t = {shift_total:.1f}."
+        eq = (
+            r"(f * g)(t) = \begin{cases} "
+            r"0, & t < " + s_tot + r" \\ "
+            f"{A1:.1f}" r" \cdot (1 - e^{-(t - " + s_tot + r")}), & t \ge " + s_tot + r" \end{cases}"
+        )
+        return eq, f"Resultado: Crecimiento exponencial acotado por A = {A1:.1f} iniciado en t = {s_tot}."
 
     elif "Impulso Unitario" in f_name or "Impulso Unitario" in g_name:
-        return rf"""
-        (f * g)(t) = f_{{desplazada}}(t - {shift_total:.1f})
-        """, f"Propiedad de tamizado: El impulso desplaza el resultado al tiempo t = {shift_total:.1f}."
+        eq = r"(f * g)(t) = f_{\text{desplazada}}(t - " + s_tot + r")"
+        return eq, f"Propiedad de tamizado: El impulso desplaza la salida a t = {s_tot}."
 
     else:
-        return r"""
-        (f * g)(t) = \int_{-\infty}^{\infty} f(\tau) g(t - \tau) d\tau
-        """, f"Evaluación numérica continua con amplitudes A_f = {A1:.1f}, A_g = {A2:.1f} y desplazamiento neto en t = {shift_total:.1f}."
+        eq = r"(f * g)(t) = \int_{-\infty}^{\infty} f(\tau) g(t - \tau) d\tau"
+        return eq, f"Evaluación numérica continua con A_f = {A1:.1f}, A_g = {A2:.1f} y desplazamiento neto en t = {s_tot}."
 
 
 f_t = generar_funcion(tipo_f, t, amp_f, t0_f)
