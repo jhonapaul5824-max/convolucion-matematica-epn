@@ -16,7 +16,7 @@ st.sidebar.write("**Código de Autoría:** EPN-MATH-ADV-2026-JR")
 
 st.markdown("""
 > **Autor del Código:** Jhonatan Ramírez  
-> *Aplicación interactiva con parámetros de amplitud, desplazamiento temporal y cálculo analítico exacto por intervalos.*
+> *Aplicación interactiva con funciones por intervalos, parámetros de amplitud, desplazamiento temporal y animación paso a paso de la convolución.*
 """)
 
 opciones_senales = [
@@ -35,25 +35,9 @@ t_min, t_max = st.sidebar.slider("Eje t", -10.0, 10.0, (-6.0, 6.0), step=0.5)
 t = np.linspace(t_min, t_max, 1000)
 dt = t[1] - t[0]
 
-# --- PARÁMETROS PARA f(t) ---
-st.sidebar.header("🔹 Configuración de f(t)")
-tipo_f = st.sidebar.selectbox("Función f(t):", opciones_senales, index=0)
-es_unitaria_f = tipo_f in ["Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Función Signo sgn(t)"]
 
-amp_f = 1.0 if es_unitaria_f else st.sidebar.slider("Amplitud A_f", 0.5, 5.0, 1.0, step=0.5)
-t0_f = st.sidebar.slider("Desplazamiento t0 para f(t - t0)", -4.0, 4.0, 0.0, step=0.5)
-
-# --- PARÁMETROS PARA g(t) ---
-st.sidebar.header("🟢 Configuración de g(t)")
-tipo_g = st.sidebar.selectbox("Función g(t):", opciones_senales, index=0)
-es_unitaria_g = tipo_g in ["Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Función Signo sgn(t)"]
-
-amp_g = 1.0 if es_unitaria_g else st.sidebar.slider("Amplitud A_g", 0.5, 5.0, 1.0, step=0.5)
-t0_g = st.sidebar.slider("Desplazamiento t0 para g(t - t0)", -4.0, 4.0, 0.0, step=0.5)
-
-
-def generar_funcion(tipo, t, amp, t0):
-    tau = t - t0
+def generar_funcion(tipo, eje_t, amp, t0):
+    tau = eje_t - t0
     if tipo == "Pulso Rectangular / Compuerta":
         return amp * np.where((tau >= -1) & (tau <= 1), 1.0, 0.0)
     elif tipo == "Pulso Triangular":
@@ -69,7 +53,7 @@ def generar_funcion(tipo, t, amp, t0):
         return amp * np.where(tau >= 0, tau, 0.0)
     elif tipo == "Función Signo sgn(t)":
         return np.sign(tau)
-    return np.zeros_like(t)
+    return np.zeros_like(eje_t)
 
 
 def fmt_sub(val):
@@ -84,7 +68,80 @@ def fmt_sub(val):
 
 def fmt_amp(amp):
     """Omite el multiplicador de amplitud si es 1.0."""
-    return "" if abs(amp - 1.0) < 1e-5 else f"{amp:.1f} \cdot "
+    return "" if abs(amp - 1.0) < 1e-5 else f"{amp:.1f} \\cdot "
+
+
+def expresion_tramo_latex(tipo, amp, t0):
+    """Genera una representación LaTeX corta para un tramo de f(t)."""
+    s = fmt_sub(t0)
+    a = fmt_amp(amp)
+    if tipo == "Pulso Rectangular / Compuerta":
+        return f"{a}\\Pi({s})"
+    elif tipo == "Pulso Triangular":
+        return f"{a}\\Lambda({s})"
+    elif tipo == "Exponencial Decreciente":
+        return f"{a}e^{{-({s})}}"
+    elif tipo == "Escalón Unitario u(t)":
+        return f"u({s})"
+    elif tipo == "Impulso Unitario δ(t)":
+        return f"\\delta({s})"
+    elif tipo == "Rampa r(t)":
+        return f"{a}r({s})"
+    elif tipo == "Función Signo sgn(t)":
+        return f"\\text{{sgn}}({s})"
+    return "0"
+
+
+# --- PARÁMETROS PARA f(t) ---
+st.sidebar.header("🔹 Configuración de f(t) [Señal Fija]")
+modo_f = st.sidebar.radio("Modo de f(t):", ["Función Única", "Por Intervalos (hasta 4 tramos)"])
+
+tramos_f = []
+if modo_f == "Función Única":
+    tipo_f = st.sidebar.selectbox("Función f(t):", opciones_senales, index=0)
+    es_unitaria_f = tipo_f in ["Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Función Signo sgn(t)"]
+    amp_f = 1.0 if es_unitaria_f else st.sidebar.slider("Amplitud A_f", 0.5, 5.0, 1.0, step=0.5)
+    t0_f = st.sidebar.slider("Desplazamiento t0 para f(t - t0)", -4.0, 4.0, 0.0, step=0.5)
+    f_t = generar_funcion(tipo_f, t, amp_f, t0_f)
+    label_f = f"f(t): {tipo_f} (A={amp_f}, t0={t0_f})"
+else:
+    num_tramos = st.sidebar.number_input("Número de intervalos (máx. 4):", min_value=1, max_value=4, value=2, step=1)
+    f_t = np.zeros_like(t)
+    
+    # Intervalos iniciales sugeridos para evitar solapamientos por defecto
+    ancho_def = (t_max - t_min) / (num_tramos + 2)
+    
+    for i in range(int(num_tramos)):
+        ini_def = round(max(t_min, -2.0 + i * 1.5), 1)
+        fin_def = round(min(t_max, ini_def + 1.5), 1)
+        with st.sidebar.expander(f"Tramo {i + 1}", expanded=(i == 0)):
+            tipo_i = st.selectbox(f"Señal tramo {i + 1}:", opciones_senales, index=i % len(opciones_senales), key=f"tipo_f_{i}")
+            es_unit_i = tipo_i in ["Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Función Signo sgn(t)"]
+            amp_i = 1.0 if es_unit_i else st.slider(f"Amplitud A_{i + 1}", 0.5, 5.0, 1.0, step=0.5, key=f"amp_f_{i}")
+            t0_i = st.slider(f"Desplazamiento t0_{i + 1}", -4.0, 4.0, 0.0, step=0.5, key=f"t0_f_{i}")
+            rango_i = st.slider(
+                f"Intervalo [a, b] tramo {i + 1}",
+                float(t_min), float(t_max),
+                (float(ini_def), float(fin_def)),
+                step=0.5,
+                key=f"rango_f_{i}"
+            )
+            a_i, b_i = rango_i
+            mask = (t >= a_i) & (t <= b_i)
+            senal_tramo = generar_funcion(tipo_i, t, amp_i, t0_i)
+            f_t = np.where(mask, senal_tramo, f_t)
+            tramos_f.append((tipo_i, amp_i, t0_i, a_i, b_i))
+            
+    label_f = f"f(t): Por intervalos ({int(num_tramos)} tramos)"
+
+# --- PARÁMETROS PARA g(t) ---
+st.sidebar.header("🟢 Configuración de g(t) [Señal Móvil]")
+tipo_g = st.sidebar.selectbox("Función g(t):", opciones_senales, index=0)
+es_unitaria_g = tipo_g in ["Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Función Signo sgn(t)"]
+
+amp_g = 1.0 if es_unitaria_g else st.sidebar.slider("Amplitud A_g", 0.5, 5.0, 1.0, step=0.5)
+t0_g = st.sidebar.slider("Desplazamiento t0 para g(t - t0)", -4.0, 4.0, 0.0, step=0.5)
+g_t = generar_funcion(tipo_g, t, amp_g, t0_g)
 
 
 def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
@@ -99,13 +156,8 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
         t_low_num = -2 + shift_total
         t_mid_num = shift_total
         t_high_num = 2 + shift_total
-        
-        t_low = f"{t_low_num:.1f}"
-        t_mid = f"{t_mid_num:.1f}"
-        t_high = f"{t_high_num:.1f}"
-        
+        t_low, t_mid, t_high = f"{t_low_num:.1f}", f"{t_mid_num:.1f}", f"{t_high_num:.1f}"
         expr_inc = fmt_sub(t_low_num)
-        
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t_low + r" \\ "
@@ -127,14 +179,9 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
 
     # 3. Pulso Rectangular * Exponencial
     elif ("Compuerta" in f_name and "Exponencial" in g_name) or ("Exponencial" in f_name and "Compuerta" in g_name):
-        t1_num = -1 + shift_total
-        t2_num = 1 + shift_total
-        t1 = f"{t1_num:.1f}"
-        t2 = f"{t2_num:.1f}"
-        
-        exp1 = fmt_sub(t1_num)
-        exp2 = fmt_sub(t2_num)
-        
+        t1_num, t2_num = -1 + shift_total, 1 + shift_total
+        t1, t2 = f"{t1_num:.1f}", f"{t2_num:.1f}"
+        exp1, exp2 = fmt_sub(t1_num), fmt_sub(t2_num)
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t1 + r" \\ "
@@ -155,12 +202,9 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
 
     # 5. Pulso Rectangular * Escalón
     elif ("Compuerta" in f_name and "Escalón" in g_name) or ("Escalón" in f_name and "Compuerta" in g_name):
-        t1_num = -1 + shift_total
-        t2_num = 1 + shift_total
-        t1 = f"{t1_num:.1f}"
-        t2 = f"{t2_num:.1f}"
+        t1_num, t2_num = -1 + shift_total, 1 + shift_total
+        t1, t2 = f"{t1_num:.1f}", f"{t2_num:.1f}"
         expr_lin = fmt_sub(t1_num)
-        
         eq = (
             r"(f * g)(t) = \begin{cases} "
             r"0, & t < " + t1 + r" \\ "
@@ -186,9 +230,6 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
         return eq, f"Evaluación de la integral por tramos con desplazamiento neto en t = {s_tot}."
 
 
-f_t = generar_funcion(tipo_f, t, amp_f, t0_f)
-g_t = generar_funcion(tipo_g, t, amp_g, t0_g)
-
 tab1, tab2, tab3 = st.tabs(["📊 Operaciones Básicas", "🔄 Convolución e Intervalos", "💻 Código Fuente del Autor"])
 
 with tab1:
@@ -206,7 +247,7 @@ with tab1:
         lbl = "f(t) · g(t)"
 
     fig, ax = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-    ax[0].plot(t, f_t, label=f"f(t): {tipo_f} (A={amp_f}, t0={t0_f})", color="blue")
+    ax[0].plot(t, f_t, label=label_f, color="blue")
     ax[0].grid(True); ax[0].legend(loc="upper right")
     
     ax[1].plot(t, g_t, label=f"g(t): {tipo_g} (A={amp_g}, t0={t0_g})", color="green")
@@ -218,27 +259,67 @@ with tab1:
     st.pyplot(fig)
 
 with tab2:
-    st.subheader("Convolución Continua con Parámetros A y t0")
-    st.latex(r"(f * g)(t) = \int_{-\infty}^{\infty} f(\tau) g(t - \tau) d\tau")
+    st.subheader("Convolución Continua y Desplazamiento Interactivo")
+    st.latex(r"(f * g)(t) = \int_{-\infty}^{\infty} f(\tau) \, g(t - \tau) \, d\tau")
     
-    latex_eq, nota = obtener_intervalos_analiticos(tipo_f, tipo_g, amp_f, amp_g, t0_f, t0_g)
-    
-    st.markdown("### 📝 Expresión Analítica por Intervalos")
-    st.latex(latex_eq)
-    st.caption(f"📌 **Nota de análisis:** {nota}")
-    
+    # Sección analítica
+    st.markdown("### 📝 Expresión Analítica")
+    if modo_f == "Función Única":
+        latex_eq, nota = obtener_intervalos_analiticos(tipo_f, tipo_g, amp_f, amp_g, t0_f, t0_g)
+        st.latex(latex_eq)
+        st.caption(f"📌 **Nota de análisis:** {nota}")
+    else:
+        filas = []
+        for (tipo_i, amp_i, t0_i, a_i, b_i) in tramos_f:
+            expr_i = expresion_tramo_latex(tipo_i, amp_i, t0_i)
+            filas.append(f"{expr_i}, & {a_i:.1f} \\le t \\le {b_i:.1f}")
+        filas.append(r"0, & \text{en otro caso}")
+        latex_f_tramos = r"f(t) = \begin{cases} " + r" \\ ".join(filas) + r" \end{cases}"
+        st.latex(latex_f_tramos)
+        st.caption("📌 **Nota de análisis:** La convolución se calcula numéricamente integrando el producto de la señal por intervalos $f(\\tau)$ con la señal móvil $g(t - \\tau)$.")
+
     st.markdown("---")
-    st.markdown("### 📈 Gráfica del Resultado Convolucionado")
+    st.markdown("### 🎬 Señal Fija $f(\\tau)$ vs. Señal Móvil $g(t - \\tau)$")
     
-    conv_res = np.convolve(f_t, g_t, mode='same') * dt
+    # Control interactivo para mover la señal g(t - tau)
+    t_actual = st.slider(
+        "Desplaza el instante t para mover la señal g(t - τ):",
+        float(t_min), float(t_max), 0.0, step=0.1
+    )
     
-    fig_conv, ax_conv = plt.subplots(figsize=(10, 4))
-    ax_conv.plot(t, conv_res, label="(f * g)(t)", color="purple", lw=2)
-    ax_conv.set_title(f"Convolución con desplazamientos (t0_f={t0_f}, t0_g={t0_g})")
-    ax_conv.set_xlabel("t")
-    ax_conv.set_ylabel("(f * g)(t)")
-    ax_conv.grid(True)
-    ax_conv.legend(loc="upper right")
+    # Señal móvil g(t_actual - tau) evaluada sobre el eje tau = t
+    g_movil = generar_funcion(tipo_g, t_actual - t, amp_g, t0_g)
+    producto_inst = f_t * g_movil
+    area_actual = np.trapezoid(producto_inst, t) if hasattr(np, "trapezoid") else np.trapz(producto_inst, t)
+    
+    # Convolución completa alineada exactamente con el eje t
+    t_conv_full = np.linspace(2 * t_min, 2 * t_max, 2 * len(t) - 1)
+    conv_full = np.convolve(f_t, g_t, mode='full') * dt
+    conv_res = np.interp(t, t_conv_full, conv_full)
+    
+    fig_conv, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    
+    # Gráfica superior: Señal fija, señal móvil y área de traslape
+    ax1.plot(t, f_t, label="Señal fija f(τ)", color="blue", lw=2)
+    ax1.plot(t, g_movil, label=f"Señal móvil g({t_actual:.1f} - τ)", color="green", lw=2, linestyle="--")
+    ax1.fill_between(t, 0, producto_inst, color="orange", alpha=0.35, label="Área f(τ)·g(t - τ)")
+    ax1.axvline(t_actual, color="red", linestyle=":", alpha=0.7)
+    ax1.set_title(f"Traslape en t = {t_actual:.1f}  |  Integral actual ≈ {area_actual:.2f}")
+    ax1.set_ylabel("Amplitud")
+    ax1.grid(True)
+    ax1.legend(loc="upper right")
+    
+    # Gráfica inferior: Resultado de la convolución con el punto actual marcado
+    ax2.plot(t, conv_res, label="(f * g)(t)", color="purple", lw=2)
+    ax2.axvline(t_actual, color="red", linestyle=":", alpha=0.7)
+    ax2.plot(t_actual, area_actual, "ro", markersize=8, label=f"(f * g)({t_actual:.1f}) = {area_actual:.2f}")
+    ax2.set_title("Resultado de la Convolución (f * g)(t)")
+    ax2.set_xlabel("t / τ")
+    ax2.set_ylabel("(f * g)(t)")
+    ax2.grid(True)
+    ax2.legend(loc="upper right")
+    
+    plt.tight_layout()
     st.pyplot(fig_conv)
 
 with tab3:
