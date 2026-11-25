@@ -1,6 +1,7 @@
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
 import streamlit as st
 
 # Configuración de página y firma de autoría
@@ -46,6 +47,7 @@ senales_unitarias = [
 # Configuración global de tiempo
 st.sidebar.header("⚙️ Rango de Tiempo")
 t_min, t_max = st.sidebar.slider("Eje t", -10.0, 10.0, (-6.0, 6.0), step=0.5)
+mostrar_marcas_t = st.sidebar.checkbox("Mostrar marcas de inicio/fin en el eje t", value=True)
 t = np.linspace(t_min, t_max, 1000)
 dt = t[1] - t[0]
 
@@ -91,6 +93,50 @@ def evaluar_tramos(tramos, eje_t):
         mask = (eje_t >= a_i) & (eje_t <= b_i)
         y = np.where(mask, generar_funcion(tipo_i, eje_t, amp_i, t0_i), y)
     return y
+
+
+def configurar_eje_t(ax, etiqueta_x="t"):
+    """Muestra valores de t cada 1 unidad y cuadrícula fina cada 0.5 en cada subgráfica."""
+    ax.xaxis.set_major_locator(MultipleLocator(1.0))
+    ax.xaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.grid(True, which="major", linestyle="-", alpha=0.6)
+    ax.grid(True, which="minor", linestyle=":", alpha=0.35)
+    ax.tick_params(axis="x", which="both", labelbottom=True)
+    ax.set_xlim(t_min, t_max)
+    ax.set_xlabel(etiqueta_x)
+
+
+def obtener_puntos_criticos(cfg):
+    """Obtiene los valores de t donde inicia o termina cada tramo o pulso."""
+    puntos = set()
+    if cfg["modo"] == "Por Intervalos (hasta 4 tramos)":
+        for (_, _, _, a_i, b_i) in cfg["tramos"]:
+            puntos.add(a_i)
+            puntos.add(b_i)
+    else:
+        tipo = cfg["tipo"]
+        t0 = cfg["t0"]
+        if tipo in ["Pulso Rectangular / Compuerta", "Pulso Triangular"]:
+            puntos.update([t0 - 1.0, t0 + 1.0])
+        elif tipo in ["Exponencial Decreciente", "Exponencial Creciente (t ≤ t0)", "Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Rampa r(t)", "Función Signo sgn(t)"]:
+            puntos.add(t0)
+    return sorted(p for p in puntos if t_min <= p <= t_max)
+
+
+def dibujar_marcas_t(ax, puntos, color, desplazamiento_y=0.04):
+    """Dibuja líneas verticales suaves y etiquetas con el valor exacto de t en los bordes."""
+    if not mostrar_marcas_t or not puntos:
+        return
+    y_min, y_max = ax.get_ylim()
+    y_pos = y_min + desplazamiento_y * (y_max - y_min)
+    for p in puntos:
+        ax.axvline(p, color=color, linestyle="--", lw=1.0, alpha=0.45)
+        ax.text(
+            p, y_pos, f" {p:g}",
+            color=color, fontsize=8.5, fontweight="bold",
+            ha="left", va="bottom",
+            bbox=dict(boxstyle="round,pad=0.15", facecolor="white", edgecolor=color, alpha=0.75)
+        )
 
 
 def fmt_sub(val):
@@ -328,7 +374,7 @@ def generar_figura_convolucion(t_actual, conv_res):
     producto_inst = f_t * g_movil
     area_actual = np.trapezoid(producto_inst, t) if hasattr(np, "trapezoid") else np.trapz(producto_inst, t)
 
-    fig_conv, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    fig_conv, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7.5))
 
     # Gráfica superior: Señal fija, señal móvil y área de traslape
     ax1.plot(t, f_t, label="Señal fija f(τ)", color="blue", lw=2)
@@ -338,7 +384,8 @@ def generar_figura_convolucion(t_actual, conv_res):
     ax1.axvline(t_actual, color="red", linestyle=":", alpha=0.7)
     ax1.set_title(f"Traslape en t = {t_actual:.1f}  |  Integral actual ≈ {area_actual:.2f}")
     ax1.set_ylabel("Amplitud")
-    ax1.grid(True)
+    configurar_eje_t(ax1, etiqueta_x="τ")
+    dibujar_marcas_t(ax1, obtener_puntos_criticos(cfg_f), color="blue", desplazamiento_y=0.04)
     ax1.legend(loc="upper right")
 
     # Gráfica inferior: Resultado de la convolución con el punto actual marcado
@@ -347,9 +394,8 @@ def generar_figura_convolucion(t_actual, conv_res):
     ax2.axvline(t_actual, color="red", linestyle=":", alpha=0.7)
     ax2.plot(t_actual, area_actual, "ro", markersize=8, label=f"(f * g)({t_actual:.1f}) = {area_actual:.2f}")
     ax2.set_title("Resultado de la Convolución (f * g)(t)")
-    ax2.set_xlabel("t / τ")
     ax2.set_ylabel("(f * g)(t)")
-    ax2.grid(True)
+    configurar_eje_t(ax2, etiqueta_x="t")
     ax2.legend(loc="upper right")
 
     plt.tight_layout()
@@ -372,19 +418,26 @@ with tab1:
         res = f_t * g_t
         lbl = "f(t) · g(t)"
 
-    fig, ax = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
-    ax[0].plot(t, f_t, label=cfg_f["label"], color="blue")
+    fig, ax = plt.subplots(3, 1, figsize=(10, 9))
+
+    ax[0].plot(t, f_t, label=cfg_f["label"], color="blue", lw=2)
     ax[0].axhline(0, color="black", lw=0.8, alpha=0.5)
-    ax[0].grid(True); ax[0].legend(loc="upper right")
+    configurar_eje_t(ax[0], etiqueta_x="t")
+    dibujar_marcas_t(ax[0], obtener_puntos_criticos(cfg_f), color="blue")
+    ax[0].legend(loc="upper right")
 
-    ax[1].plot(t, g_t, label=cfg_g["label"], color="green")
+    ax[1].plot(t, g_t, label=cfg_g["label"], color="green", lw=2)
     ax[1].axhline(0, color="black", lw=0.8, alpha=0.5)
-    ax[1].grid(True); ax[1].legend(loc="upper right")
+    configurar_eje_t(ax[1], etiqueta_x="t")
+    dibujar_marcas_t(ax[1], obtener_puntos_criticos(cfg_g), color="green")
+    ax[1].legend(loc="upper right")
 
-    ax[2].plot(t, res, label=lbl, color="red")
+    ax[2].plot(t, res, label=lbl, color="red", lw=2)
     ax[2].axhline(0, color="black", lw=0.8, alpha=0.5)
-    ax[2].grid(True); ax[2].legend(loc="upper right")
+    configurar_eje_t(ax[2], etiqueta_x="t")
+    ax[2].legend(loc="upper right")
 
+    plt.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
 
