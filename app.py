@@ -18,7 +18,7 @@ st.sidebar.write("**Código de Autoría:** EPN-MATH-ADV-2026-JR")
 
 st.markdown("""
 > **Autor del Código:** Jhonatan Ramírez  
-> *Aplicación interactiva con funciones por intervalos para $f(t)$ y $g(t)$, señales positivas/negativas y visualización manual o animada de la convolución.*
+> *Aplicación interactiva con funciones por intervalos para $f(t)$ y $g(t)$, señales positivas/negativas y generación progresiva de la convolución.*
 """)
 
 opciones_senales = [
@@ -369,7 +369,7 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
 
 
 def generar_figura_convolucion(t_actual, conv_res):
-    """Genera la figura de dos paneles: señal fija vs móvil arriba y convolución abajo."""
+    """Genera la figura de dos paneles: señal fija vs móvil arriba y convolución progresiva abajo."""
     g_movil = evaluar_g_movil(t_actual)
     producto_inst = f_t * g_movil
     area_actual = np.trapezoid(producto_inst, t) if hasattr(np, "trapezoid") else np.trapz(producto_inst, t)
@@ -388,12 +388,19 @@ def generar_figura_convolucion(t_actual, conv_res):
     dibujar_marcas_t(ax1, obtener_puntos_criticos(cfg_f), color="blue", desplazamiento_y=0.04)
     ax1.legend(loc="upper right")
 
-    # Gráfica inferior: Resultado de la convolución con el punto actual marcado
-    ax2.plot(t, conv_res, label="(f * g)(t)", color="purple", lw=2)
+    # Gráfica inferior: Convolución generándose progresivamente hasta t_actual
+    mask_progreso = t <= t_actual
+    ax2.plot(t[mask_progreso], conv_res[mask_progreso], label="(f * g)(t)", color="purple", lw=2.5)
     ax2.axhline(0, color="black", lw=0.8, alpha=0.5)
     ax2.axvline(t_actual, color="red", linestyle=":", alpha=0.7)
     ax2.plot(t_actual, area_actual, "ro", markersize=8, label=f"(f * g)({t_actual:.1f}) = {area_actual:.2f}")
-    ax2.set_title("Resultado de la Convolución (f * g)(t)")
+
+    # Fijar límites en Y para que la gráfica no salte al irse dibujando
+    y_min_c, y_max_c = float(np.min(conv_res)), float(np.max(conv_res))
+    margen_c = max(0.5, 0.15 * (y_max_c - y_min_c))
+    ax2.set_ylim(y_min_c - margen_c, y_max_c + margen_c)
+
+    ax2.set_title("Resultado de la Convolución (f * g)(t) [Generación en tiempo real]")
     ax2.set_ylabel("(f * g)(t)")
     configurar_eje_t(ax2, etiqueta_x="t")
     ax2.legend(loc="upper right")
