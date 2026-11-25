@@ -1,7 +1,8 @@
-import time
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 # Configuración de página y firma de autoría
@@ -66,7 +67,7 @@ def generar_funcion(tipo, eje_t, amp, t0):
         return amp * np.where(tau >= 0, 1.0, 0.0)
     elif tipo == "Impulso Unitario δ(t)":
         ancho = 0.05
-        return amp * np.where((tau >= -ancho/2) & (tau <= ancho/2), 1.0 / ancho, 0.0)
+        return amp * np.where((tau >= -ancho / 2) & (tau <= ancho / 2), 1.0 / ancho, 0.0)
     elif tipo == "Rampa r(t)":
         return amp * np.where(tau >= 0, tau, 0.0)
     elif tipo == "Función Signo sgn(t)":
@@ -118,7 +119,14 @@ def obtener_puntos_criticos(cfg):
         t0 = cfg["t0"]
         if tipo in ["Pulso Rectangular / Compuerta", "Pulso Triangular"]:
             puntos.update([t0 - 1.0, t0 + 1.0])
-        elif tipo in ["Exponencial Decreciente", "Exponencial Creciente (t ≤ t0)", "Escalón Unitario u(t)", "Impulso Unitario δ(t)", "Rampa r(t)", "Función Signo sgn(t)"]:
+        elif tipo in [
+            "Exponencial Decreciente",
+            "Exponencial Creciente (t ≤ t0)",
+            "Escalón Unitario u(t)",
+            "Impulso Unitario δ(t)",
+            "Rampa r(t)",
+            "Función Signo sgn(t)"
+        ]:
             puntos.add(t0)
     return sorted(p for p in puntos if t_min <= p <= t_max)
 
@@ -307,7 +315,7 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
             + str_amp_tot + r"(" + t_high + r" - t), & " + t_mid + r" \le t \le " + t_high + r" \\ "
             r"0, & t > " + t_high + r" \end{cases}"
         )
-        return eq, f"Triángulo de amplitud pico {A_total*2:.1f} centrado en t = {s_tot} sobre el intervalo [{t_low}, {t_high}]."
+        return eq, f"Triángulo de amplitud pico {A_total * 2:.1f} centrado en t = {s_tot} sobre el intervalo [{t_low}, {t_high}]."
 
     # 2. Exponencial Decreciente * Escalón
     elif ("Exponencial Decreciente" in f_name and "Escalón" in g_name) or ("Escalón" in f_name and "Exponencial Decreciente" in g_name):
@@ -369,7 +377,7 @@ def obtener_intervalos_analiticos(f_name, g_name, A1, A2, shift1, shift2):
 
 
 def generar_figura_convolucion(t_actual, conv_res):
-    """Genera la figura de dos paneles: señal fija vs móvil arriba y convolución progresiva abajo."""
+    """Genera la figura estática de dos paneles para el modo de control manual."""
     g_movil = evaluar_g_movil(t_actual)
     producto_inst = f_t * g_movil
     area_actual = np.trapezoid(producto_inst, t) if hasattr(np, "trapezoid") else np.trapz(producto_inst, t)
@@ -409,11 +417,208 @@ def generar_figura_convolucion(t_actual, conv_res):
     return fig_conv
 
 
+def generar_animacion_plotly(valores_t, conv_res, fps=20):
+    """Genera una animación fluida en el navegador usando cuadros nativos de Plotly."""
+    tiene_impulso = (
+        (cfg_f["tipo"] and "Impulso" in cfg_f["tipo"])
+        or (cfg_g["tipo"] and "Impulso" in cfg_g["tipo"])
+        or any("Impulso" in tramo[0] for tramo in cfg_f["tramos"] + cfg_g["tramos"])
+    )
+    salto = 1 if tiene_impulso else 2
+    t_vis = t[::salto]
+    f_vis = f_t[::salto]
+
+    frames_data = []
+    y1_min, y1_max = float(np.min(f_t)), float(np.max(f_t))
+
+    for t_val in valores_t:
+        g_movil = evaluar_g_movil(t_val)
+        producto_inst = f_t * g_movil
+        area_actual = float(
+            np.trapezoid(producto_inst, t) if hasattr(np, "trapezoid") else np.trapz(producto_inst, t)
+        )
+
+        y1_min = min(y1_min, float(np.min(g_movil)), float(np.min(producto_inst)))
+        y1_max = max(y1_max, float(np.max(g_movil)), float(np.max(producto_inst)))
+
+        mask_progreso = t <= t_val
+        frames_data.append((
+            float(t_val),
+            g_movil[::salto],
+            producto_inst[::salto],
+            t[mask_progreso][::salto],
+            conv_res[mask_progreso][::salto],
+            area_actual,
+        ))
+
+    # Límites fijos en Y para evitar saltos de escala
+    margen_1 = max(0.5, 0.15 * (y1_max - y1_min))
+    y1_lim = [y1_min - margen_1, y1_max + margen_1]
+
+    y2_min, y2_max = float(np.min(conv_res)), float(np.max(conv_res))
+    margen_2 = max(0.5, 0.15 * (y2_max - y2_min))
+    y2_lim = [y2_min - margen_2, y2_max + margen_2]
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        vertical_spacing=0.14,
+        subplot_titles=(
+            "Traslape: Señal fija f(τ) vs. Señal móvil g(t - τ)",
+            "Resultado de la Convolución (f * g)(t) [Generación fluida]"
+        )
+    )
+
+    t0_val, g0, prod0, t_prog0, conv_prog0, area0 = frames_data[0]
+
+    # Traza 0 (estática): f(τ)
+    fig.add_trace(go.Scatter(
+        x=t_vis, y=f_vis, mode="lines",
+        name="Señal fija f(τ)", line=dict(color="blue", width=2.5)
+    ), row=1, col=1)
+
+    # Traza 1 (dinámica): g(t - τ)
+    fig.add_trace(go.Scatter(
+        x=t_vis, y=g0, mode="lines",
+        name="Señal móvil g(t - τ)", line=dict(color="green", width=2.5, dash="dash")
+    ), row=1, col=1)
+
+    # Traza 2 (dinámica): Área de traslape
+    fig.add_trace(go.Scatter(
+        x=t_vis, y=prod0, mode="lines",
+        name="Área f(τ)·g(t - τ)", fill="tozeroy",
+        fillcolor="rgba(255, 165, 0, 0.35)",
+        line=dict(color="rgba(255, 165, 0, 0.6)", width=1)
+    ), row=1, col=1)
+
+    # Traza 3 (dinámica): Línea vertical en t_actual (panel superior)
+    fig.add_trace(go.Scatter(
+        x=[t0_val, t0_val], y=y1_lim, mode="lines",
+        line=dict(color="red", width=1.5, dash="dot"), showlegend=False
+    ), row=1, col=1)
+
+    # Traza 4 (dinámica): Convolución progresiva
+    fig.add_trace(go.Scatter(
+        x=t_prog0, y=conv_prog0, mode="lines",
+        name="(f * g)(t)", line=dict(color="purple", width=3)
+    ), row=2, col=1)
+
+    # Traza 5 (dinámica): Punto rojo con valor en vivo
+    fig.add_trace(go.Scatter(
+        x=[t0_val], y=[area0], mode="markers+text",
+        name="Valor actual", marker=dict(color="red", size=10),
+        text=[f"  t={t0_val:.1f}, Área={area0:.2f}"],
+        textposition="top right"
+    ), row=2, col=1)
+
+    # Traza 6 (dinámica): Línea vertical en t_actual (panel inferior)
+    fig.add_trace(go.Scatter(
+        x=[t0_val, t0_val], y=y2_lim, mode="lines",
+        line=dict(color="red", width=1.5, dash="dot"), showlegend=False
+    ), row=2, col=1)
+
+    # Marcas de puntos críticos de f(τ)
+    if mostrar_marcas_t:
+        for p in obtener_puntos_criticos(cfg_f):
+            fig.add_vline(
+                x=p, line_dash="dash", line_color="rgba(0, 0, 255, 0.4)",
+                line_width=1, row=1, col=1,
+                annotation_text=f"{p:g}", annotation_position="bottom right"
+            )
+
+    # Construcción de cuadros y pasos del slider
+    duracion_ms = int(1000 / fps)
+    frames = []
+    slider_steps = []
+
+    for idx, (t_val, g_v, prod_v, t_prog, conv_prog, area_v) in enumerate(frames_data):
+        nombre_frame = str(idx)
+        frames.append(go.Frame(
+            name=nombre_frame,
+            traces=[1, 2, 3, 4, 5, 6],
+            data=[
+                go.Scatter(x=t_vis, y=g_v),
+                go.Scatter(x=t_vis, y=prod_v),
+                go.Scatter(x=[t_val, t_val], y=y1_lim),
+                go.Scatter(x=t_prog, y=conv_prog),
+                go.Scatter(x=[t_val], y=[area_v], text=[f"  t={t_val:.1f}, Área={area_v:.2f}"]),
+                go.Scatter(x=[t_val, t_val], y=y2_lim),
+            ]
+        ))
+        slider_steps.append({
+            "method": "animate",
+            "label": f"{t_val:.1f}",
+            "args": [
+                [nombre_frame],
+                {"frame": {"duration": 0, "redraw": True}, "mode": "immediate", "transition": {"duration": 0}}
+            ]
+        })
+
+    fig.frames = frames
+
+    fig.update_layout(
+        height=720,
+        legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="center", x=0.5),
+        updatemenus=[{
+            "type": "buttons",
+            "showactive": False,
+            "x": 0.0, "y": -0.08,
+            "xanchor": "left", "yanchor": "top",
+            "direction": "left",
+            "pad": {"r": 10, "t": 10},
+            "buttons": [
+                {
+                    "label": "▶️ Reproducir",
+                    "method": "animate",
+                    "args": [
+                        None,
+                        {
+                            "frame": {"duration": duracion_ms, "redraw": True},
+                            "fromcurrent": True,
+                            "transition": {"duration": 0}
+                        }
+                    ]
+                },
+                {
+                    "label": "⏸️ Pausar",
+                    "method": "animate",
+                    "args": [
+                        [None],
+                        {
+                            "frame": {"duration": 0, "redraw": False},
+                            "mode": "immediate",
+                            "transition": {"duration": 0}
+                        }
+                    ]
+                }
+            ]
+        }],
+        sliders=[{
+            "active": 0,
+            "x": 0.24, "len": 0.76,
+            "y": -0.08, "yanchor": "top",
+            "currentvalue": {"prefix": "Instante t = ", "visible": True, "xanchor": "right"},
+            "pad": {"b": 10, "t": 10},
+            "steps": slider_steps
+        }]
+    )
+
+    fig.update_xaxes(range=[t_min, t_max], dtick=1.0, showgrid=True, title_text="τ", row=1, col=1)
+    fig.update_xaxes(range=[t_min, t_max], dtick=1.0, showgrid=True, title_text="t", row=2, col=1)
+    fig.update_yaxes(range=y1_lim, zeroline=True, zerolinecolor="rgba(0,0,0,0.4)", title_text="Amplitud", row=1, col=1)
+    fig.update_yaxes(range=y2_lim, zeroline=True, zerolinecolor="rgba(0,0,0,0.4)", title_text="(f * g)(t)", row=2, col=1)
+
+    return fig
+
+
 tab1, tab2, tab3 = st.tabs(["📊 Operaciones Básicas", "🔄 Convolución e Intervalos", "💻 Código Fuente del Autor"])
 
 with tab1:
     st.subheader("Suma, Resta y Multiplicación de Funciones")
-    operacion = st.radio("Selecciona la operación:", ["Suma: f(t) + g(t)", "Resta: f(t) - g(t)", "Producto: f(t) * g(t)"], horizontal=True)
+    operacion = st.radio(
+        "Selecciona la operación:",
+        ["Suma: f(t) + g(t)", "Resta: f(t) - g(t)", "Producto: f(t) * g(t)"],
+        horizontal=True
+    )
 
     if operacion == "Suma: f(t) + g(t)":
         res = f_t + g_t
@@ -472,7 +677,7 @@ with tab2:
 
     # Convolución completa alineada exactamente con el eje t
     t_conv_full = np.linspace(2 * t_min, 2 * t_max, 2 * len(t) - 1)
-    conv_full = np.convolve(f_t, g_t, mode='full') * dt
+    conv_full = np.convolve(f_t, g_t, mode="full") * dt
     conv_res = np.interp(t, t_conv_full, conv_full)
 
     # Selector de modo de desplazamiento
@@ -491,29 +696,17 @@ with tab2:
         st.pyplot(fig_conv)
         plt.close(fig_conv)
     else:
-        col1, col2, col3 = st.columns([1, 1, 1])
+        col1, col2 = st.columns(2)
         with col1:
-            paso_anim = st.slider("Paso de tiempo Δt:", 0.1, 1.0, 0.3, step=0.1)
+            paso_anim = st.slider("Resolución de paso Δt (menor = más suave):", 0.05, 0.50, 0.15, step=0.05)
         with col2:
-            velocidad = st.slider("Pausa entre cuadros (s):", 0.02, 0.50, 0.08, step=0.02)
-        with col3:
-            st.write("")
-            iniciar = st.button("▶️ Reproducir Animación", use_container_width=True)
+            fps = st.slider("Velocidad (cuadros por segundo - FPS):", 5, 40, 20, step=5)
 
-        contenedor_grafica = st.empty()
+        n_frames = max(2, int(round((t_max - t_min) / paso_anim)) + 1)
+        valores_t = np.linspace(t_min, t_max, n_frames)
 
-        if iniciar:
-            valores_t = np.arange(t_min, t_max + paso_anim, paso_anim)
-            for t_val in valores_t:
-                t_val = min(float(t_val), float(t_max))
-                fig_frame = generar_figura_convolucion(t_val, conv_res)
-                contenedor_grafica.pyplot(fig_frame)
-                plt.close(fig_frame)
-                time.sleep(velocidad)
-        else:
-            fig_inicial = generar_figura_convolucion(float(t_min), conv_res)
-            contenedor_grafica.pyplot(fig_inicial)
-            plt.close(fig_inicial)
+        fig_anim = generar_animacion_plotly(valores_t, conv_res, fps=fps)
+        st.plotly_chart(fig_anim, use_container_width=True)
 
 with tab3:
     st.subheader("Verificación de Autoría")
